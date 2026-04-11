@@ -77,10 +77,38 @@ const MorseCode = () => {
     };
   }, [handlePressStart, handlePressEnd]);
 
+  const trackActivity = (mode: string, text: string) => {
+    try {
+      const activity = {
+        id: Date.now().toString(),
+        mode,
+        text: text.slice(0, 100), // Limit text length
+        time: new Date().toISOString(),
+        timestamp: Date.now()
+      };
+      
+      // Get existing activity
+      const existingActivity = JSON.parse(localStorage.getItem('mmacs-activity') || '[]');
+      const updatedActivity = [activity, ...existingActivity.slice(0, 49)]; // Keep last 50 activities
+      localStorage.setItem('mmacs-activity', JSON.stringify(updatedActivity));
+      
+      // Update stats
+      const stats = JSON.parse(localStorage.getItem('mmacs-stats') || '{}');
+      const modeKey = mode.toLowerCase().replace(' ', '') + 'Count';
+      stats[modeKey] = (stats[modeKey] || 0) + 1;
+      stats.totalTranslations = (stats.totalTranslations || 0) + 1;
+      localStorage.setItem('mmacs-stats', JSON.stringify(stats));
+    } catch (error) {
+      console.log('Error tracking activity:', error);
+    }
+  };
+
   const speak = () => {
     if (!decodedText.trim()) return;
     const utter = new SpeechSynthesisUtterance(decodedText);
     speechSynthesis.speak(utter);
+    // Track activity for dashboard
+    trackActivity('Morse Code', decodedText);
   };
 
   const clear = () => {
