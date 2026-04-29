@@ -6,16 +6,84 @@ let faceLandmarker: FaceLandmarker | null = null;
 
 export const loadFaceLandmarker = async () => {
   if (!faceLandmarker) {
-    const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-    );
-    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`
-      },
-      runningMode: 'VIDEO',
-      numFaces: 1
-    } as FaceLandmarkerOptions);
+    try {
+      // Try multiple CDN sources for better reliability
+      const wasmSources = [
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+        'https://unpkg.com/@mediapipe/tasks-vision@latest/wasm',
+        'https://cdn.skypack.dev/@mediapipe/tasks-vision@latest/wasm'
+      ];
+      
+      const modelSources = [
+        'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+        'https://cdn.jsdelivr.net/npm/@mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+      ];
+      
+      let vision = null;
+      let lastError = null;
+      
+      // Try different WASM sources
+      for (const wasmSource of wasmSources) {
+        try {
+          console.log(`Trying WASM source: ${wasmSource}`);
+          vision = await FilesetResolver.forVisionTasks(wasmSource);
+          break;
+        } catch (error) {
+          console.warn(`WASM source failed: ${wasmSource}`, error);
+          lastError = error;
+        }
+      }
+      
+      if (!vision) {
+        throw lastError || new Error('Failed to load MediaPipe WASM from any source');
+      }
+      
+      // Try different model sources
+      let modelLoaded = false;
+      for (const modelSource of modelSources) {
+        try {
+          console.log(`Trying model source: ${modelSource}`);
+          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: modelSource,
+              delegate: 'GPU' // Try GPU acceleration first
+            },
+            runningMode: 'VIDEO',
+            numFaces: 1
+          } as FaceLandmarkerOptions);
+          modelLoaded = true;
+          break;
+        } catch (error) {
+          console.warn(`Model source failed: ${modelSource}`, error);
+          lastError = error;
+          
+          // Fallback to CPU if GPU fails
+          try {
+            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: modelSource,
+                delegate: 'CPU'
+              },
+              runningMode: 'VIDEO',
+              numFaces: 1
+            } as FaceLandmarkerOptions);
+            modelLoaded = true;
+            break;
+          } catch (cpuError) {
+            console.warn(`CPU fallback also failed: ${modelSource}`, cpuError);
+          }
+        }
+      }
+      
+      if (!modelLoaded) {
+        throw lastError || new Error('Failed to load face landmark model from any source');
+      }
+      
+      console.log('Face landmark model loaded successfully');
+    } catch (error) {
+      console.error('Failed to load face landmark model:', error);
+      throw error;
+    }
   }
   return faceLandmarker;
 };

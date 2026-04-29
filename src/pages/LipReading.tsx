@@ -43,34 +43,53 @@ const LipReading = () => {
   };
 
   const detectLoop = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || !isDetecting) return;
+    if (!videoRef.current || !canvasRef.current || !stream || !isDetecting) return;
 
     const ctx = canvasRef.current.getContext('2d');
     if (!ctx) return;
 
-    ctx.drawImage(videoRef.current, 0, 0, 640, 480);
+    const video = videoRef.current;
+    
+    // Ensure video is ready
+    if (video.readyState !== 4) {
+      setTimeout(() => requestAnimationFrame(detectLoop), 100);
+      return;
+    }
+    
+    // Draw video frame with mirror effect
+    ctx.save();
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, -640, 0, 640, 480);
+    ctx.restore();
 
     try {
-      const viseme = await detectViseme(videoRef.current);
-      setDetectedVisemes((prev) => {
-        const newVisemes = [viseme, ...prev.slice(0, 19)];
-        const text = visemesToText(newVisemes);
-        setDetectedText(prev => {
-          const newText = text;
-          // Limit text length to prevent memory issues
-          return newText.length > 500 ? newText.slice(-500) : newText;
+      const viseme = await detectViseme(video);
+      
+      // Only update if we get a valid viseme
+      if (viseme && viseme !== 'sil') {
+        setDetectedVisemes((prev) => {
+          const newVisemes = [viseme, ...prev.slice(0, 19)];
+          const text = visemesToText(newVisemes);
+          setDetectedText(prev => {
+            const newText = text;
+            // Limit text length to prevent memory issues
+            return newText.length > 500 ? newText.slice(-500) : newText;
+          });
+          return newVisemes;
         });
-        return newVisemes;
-      });
+      }
     } catch (e) {
       console.log('Lip detection error:', e);
+      // Don't update on error, keep previous state
     }
 
     // Add throttling to reduce CPU usage
     setTimeout(() => {
-      requestAnimationFrame(detectLoop);
-    }, 150);
-  }, [isDetecting, videoRef]);
+      if (isDetecting) {
+        requestAnimationFrame(detectLoop);
+      }
+    }, 100);
+  }, [isDetecting, videoRef, stream]);
 
   const speak = () => {
     if (detectedText.trim()) {

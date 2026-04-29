@@ -26,17 +26,61 @@ const SignLanguage = () => {
         timestamp: Date.now()
       };
       
-      const existingActivity = JSON.parse(localStorage.getItem('mmacs-activity') || '[]');
-      const updatedActivity = [activity, ...existingActivity.slice(0, 49)];
-      localStorage.setItem('mmacs-activity', JSON.stringify(updatedActivity));
+      // Safe localStorage operations with fallbacks
+      let existingActivity = [];
+      try {
+        const stored = localStorage.getItem('mmacs-activity');
+        existingActivity = stored ? JSON.parse(stored) : [];
+      } catch (parseError) {
+        console.warn('Failed to parse activity data:', parseError);
+      }
       
-      const stats = JSON.parse(localStorage.getItem('mmacs-stats') || '{}');
+      const updatedActivity = [activity, ...existingActivity.slice(0, 49)];
+      
+      try {
+        localStorage.setItem('mmacs-activity', JSON.stringify(updatedActivity));
+      } catch (storageError) {
+        console.warn('Failed to store activity data:', storageError);
+        // Fallback to sessionStorage if localStorage is full
+        try {
+          sessionStorage.setItem('mmacs-activity', JSON.stringify(updatedActivity));
+        } catch (sessionError) {
+          console.warn('Failed to store activity in sessionStorage:', sessionError);
+        }
+      }
+      
+      // Update stats with safe operations
+      interface Stats {
+        [key: string]: number;
+        totalTranslations: number;
+      }
+      
+      let stats: Stats = { totalTranslations: 0 };
+      try {
+        const storedStats = localStorage.getItem('mmacs-stats');
+        stats = storedStats ? JSON.parse(storedStats) : { totalTranslations: 0 };
+      } catch (parseError) {
+        console.warn('Failed to parse stats data:', parseError);
+        stats = { totalTranslations: 0 };
+      }
+      
       const modeKey = mode.toLowerCase().replace(' ', '') + 'Count';
       stats[modeKey] = (stats[modeKey] || 0) + 1;
       stats.totalTranslations = (stats.totalTranslations || 0) + 1;
-      localStorage.setItem('mmacs-stats', JSON.stringify(stats));
+      
+      try {
+        localStorage.setItem('mmacs-stats', JSON.stringify(stats));
+      } catch (storageError) {
+        console.warn('Failed to store stats data:', storageError);
+        // Fallback to sessionStorage
+        try {
+          sessionStorage.setItem('mmacs-stats', JSON.stringify(stats));
+        } catch (sessionError) {
+          console.warn('Failed to store stats in sessionStorage:', sessionError);
+        }
+      }
     } catch (error) {
-      console.log('Error tracking activity:', error);
+      console.error('Error tracking activity:', error);
     }
   };
 
@@ -48,6 +92,12 @@ const SignLanguage = () => {
 
     const video = videoRef.current;
     
+    // Ensure video is ready
+    if (video.readyState !== 4) {
+      setTimeout(() => requestAnimationFrame(detectLoop), 100);
+      return;
+    }
+    
     // Draw video frame
     ctx.save();
     ctx.scale(-1, 1);
@@ -57,17 +107,31 @@ const SignLanguage = () => {
     try {
       const detection = await detectGesture(video);
       
-      if (detection.confidence > 0.8 && detection.gesture !== 'UNKNOWN') {
+      // Lower confidence threshold for better detection
+      if (detection.confidence > 0.6 && detection.gesture !== 'UNKNOWN') {
         setCurrentGesture(detection);
         
         // Only speak if this gesture hasn't been spoken recently
         if (detection.gesture !== lastSpokenGesture) {
           // Stop any ongoing speech to prevent overlapping
-          speechSynthesis.cancel();
+          if (speechSynthesis.speaking) {
+            speechSynthesis.cancel();
+          }
           
-          // Speak the result
-          const utterance = new SpeechSynthesisUtterance(detection.voiceText);
-          speechSynthesis.speak(utterance);
+          // Wait a bit for cancellation to take effect
+          setTimeout(() => {
+            // Speak the result
+            const utterance = new SpeechSynthesisUtterance(detection.voiceText);
+            utterance.rate = 0.9;
+            utterance.pitch = 1;
+            utterance.volume = 1;
+            
+            utterance.onstart = () => console.log('Speaking:', detection.voiceText);
+            utterance.onend = () => console.log('Finished speaking');
+            utterance.onerror = (e) => console.error('Speech error:', e);
+            
+            speechSynthesis.speak(utterance);
+          }, 100);
           
           // Track activity
           trackActivity('Sign Language', detection.meaning);
@@ -75,22 +139,25 @@ const SignLanguage = () => {
           // Update last spoken gesture immediately
           setLastSpokenGesture(detection.gesture);
           
-          // Reset after 3 seconds to allow speaking the same gesture again
+          // Reset after 2 seconds to allow speaking the same gesture again
           setTimeout(() => {
             setLastSpokenGesture('');
-          }, 3000);
+          }, 2000);
         }
       } else {
         setCurrentGesture(null);
       }
     } catch (e) {
       console.log('Detection error:', e);
+      // Don't update gesture on error, keep previous state
     }
 
-    // Continue detection loop with throttling
+    // Continue detection loop with faster response
     setTimeout(() => {
-      requestAnimationFrame(detectLoop);
-    }, 300);
+      if (isDetecting) {
+        requestAnimationFrame(detectLoop);
+      }
+    }, 200);
   }, [videoRef, stream, isDetecting, lastSpokenGesture]);
 
   const startDetection = () => {

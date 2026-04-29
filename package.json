@@ -1,14 +1,17 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "multi-modal-assistive-sytem",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "build:dev": "vite build --mode development",
-    "lint": "eslint .",
+    "build": "tsc && vite build",
+    "build:render": "npm run build",
+    "build:cloudflare": "npm run build",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
+    "deploy:render": "npm run build:render && render-cli deploy",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler pages publish dist",
     "test": "vitest run",
     "test:watch": "vitest"
   },

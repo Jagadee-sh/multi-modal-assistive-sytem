@@ -5,16 +5,84 @@ let handLandmarker: HandLandmarker | null = null;
 
 export const loadHandLandmarker = async () => {
   if (!handLandmarker) {
-    const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
-    );
-    handLandmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`
-      },
-      runningMode: 'VIDEO',
-      numHands: 2
-    } as HandLandmarkerOptions);
+    try {
+      // Try multiple CDN sources for better reliability
+      const wasmSources = [
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+        'https://unpkg.com/@mediapipe/tasks-vision@latest/wasm',
+        'https://cdn.skypack.dev/@mediapipe/tasks-vision@latest/wasm'
+      ];
+      
+      const modelSources = [
+        'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        'https://cdn.jsdelivr.net/npm/@mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+      ];
+      
+      let vision = null;
+      let lastError = null;
+      
+      // Try different WASM sources
+      for (const wasmSource of wasmSources) {
+        try {
+          console.log(`Trying WASM source: ${wasmSource}`);
+          vision = await FilesetResolver.forVisionTasks(wasmSource);
+          break;
+        } catch (error) {
+          console.warn(`WASM source failed: ${wasmSource}`, error);
+          lastError = error;
+        }
+      }
+      
+      if (!vision) {
+        throw lastError || new Error('Failed to load MediaPipe WASM from any source');
+      }
+      
+      // Try different model sources
+      let modelLoaded = false;
+      for (const modelSource of modelSources) {
+        try {
+          console.log(`Trying model source: ${modelSource}`);
+          handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: modelSource,
+              delegate: 'GPU' // Try GPU acceleration first
+            },
+            runningMode: 'VIDEO',
+            numHands: 2
+          } as HandLandmarkerOptions);
+          modelLoaded = true;
+          break;
+        } catch (error) {
+          console.warn(`Model source failed: ${modelSource}`, error);
+          lastError = error;
+          
+          // Fallback to CPU if GPU fails
+          try {
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: modelSource,
+                delegate: 'CPU'
+              },
+              runningMode: 'VIDEO',
+              numHands: 2
+            } as HandLandmarkerOptions);
+            modelLoaded = true;
+            break;
+          } catch (cpuError) {
+            console.warn(`CPU fallback also failed: ${modelSource}`, cpuError);
+          }
+        }
+      }
+      
+      if (!modelLoaded) {
+        throw lastError || new Error('Failed to load hand landmark model from any source');
+      }
+      
+      console.log('Hand landmark model loaded successfully');
+    } catch (error) {
+      console.error('Failed to load hand landmark model:', error);
+      throw error;
+    }
   }
   return handLandmarker;
 };

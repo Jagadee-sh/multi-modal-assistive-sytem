@@ -1,0 +1,24 @@
+name = "multi-modal-assistive-sytem"
+main = "src/index.ts"
+compatibility_date = "2024-04-28"
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.development]
+vars = { ENVIRONMENT = "development" }
+
+# Static site configuration
+[site]
+bucket = "dist"
+entry-point = "workers-site"
+
+# Build configuration
+[build]
+command = "npm run build"
+watch_dir = "src"
+
+# Environment variables
+[vars]
+NODE_ENV = "production"
+VITE_API_URL = "https://multi-modal-assistive-sytem.pages.dev"
